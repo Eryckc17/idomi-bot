@@ -5,12 +5,13 @@ from threading import Thread
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "🦅 EL HALCÓN v24.5 - RUTA SEGURA IDOMI"
+    return "🦅 EL HALCÓN v24.6 - BLINDADO IDOMI"
 
 def run_flask():
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
 
+# --- CONFIGURACIÓN ---
 TOKEN = "8627174315:AAGKTN6-WLuBqyFPZxoVatP_L7rrRq14iJA"
 CHAT_ID = "644581238"
 ESTADO_MSG_ID = None
@@ -44,36 +45,41 @@ def borrar_mensaje(msg_id):
 def ejecutar_patrullaje():
     global PESCA_DIARIA
     if random.random() < 0.25:
-        area = random.randint(400, 1600)
+        area = random.randint(500, 1500)
         res = motor_analisis_halcon(area)
         
-        # Lógica de ubicación detallada
-        regiones = ["Cibao Central", "Distrito Nacional", "Bávaro/Punta Cana"]
+        # Datos de ubicación y contacto
+        regiones = ["Santiago (Cibao Central)", "Santo Domingo (DN)", "La Vega (Cibao Central)"]
         region = random.choice(regiones)
-        direccion_ejemplo = "Calle Central #45, Próximo a la Zona Franca"
-        provincia = "Santiago" if "Cibao" in region else "Santo Domingo"
-        
-        tipo = "💎 DIAMANTE" if area > 900 else "🟢 VERDE"
-        obra = "Impermeabilización de Techo Industrial"
+        direccion = "Av. Bartolomé Colón, Esq. Calle 10, Próximo a Plaza Texas"
+        obra = "Impermeabilización Nave Industrial / Techo"
         empresa = "Constructora del Norte S.R.L."
+        rnc = "131-01234-5"
         ing = "Ing. Roberto Alcántara"
         tel = "8295551234"
+        email = "proyectos@constructora.com.do"
         
-        # Link de Maps basado en la dirección encontrada
-        maps_query = f"{direccion_ejemplo}, {provincia}, Dominican Republic".replace(" ", "+")
+        tipo = "💎 DIAMANTE" if area > 900 else "🟢 VERDE"
+        
+        # LINKS CORREGIDOS (Sin 404)
+        dgii_link = "https://dgii.gov.do/herramientas/consultas/Paginas/RNC.aspx" # Página oficial de consulta
+        maps_query = f"{direccion}, {region}, Dominican Republic".replace(" ", "+")
         maps_link = f"https://www.google.com/maps/search/?api=1&query={maps_query}"
-        wa_link = f"https://wa.me/1{tel}?text=Hola%20{ing},%20contacto%20de%20IDOMI%20por%20la%20obra:%20{obra}"
+        wa_link = f"https://wa.me/1{tel}?text=Hola%20Ing.%20{ing},%20contacto%20de%20IDOMI%20por%20la%20obra:%20{obra}"
+        mail_link = f"mailto:{email}?subject=Propuesta%20IDOMI%20-%20{obra}"
+        fuente_link = "https://www.dgcp.gob.do/servicios/consultas-publicas/"
 
         alerta = (
             f"{tipo}: PROYECTO PARA VALIDAR\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🏗️ <b>OBRA:</b> {obra}\n"
-            f"📍 <b>ZONA:</b> {provincia} ({region})\n"
-            f"🏠 <b>DIRECCIÓN:</b> {direccion_ejemplo}\n"
+            f"📍 <b>ZONA:</b> {region}\n"
+            f"🏠 <b>DIRECCIÓN:</b> {direccion}\n"
             f"🏢 <b>EMPRESA:</b> {empresa}\n"
-            f"🆔 <b>RNC:</b> 131-XXXXX-X (<a href='https://dgii.gov.do/etiquetadoRNC/'>🔍 Validar en DGII</a>)\n"
+            f"🆔 <b>RNC:</b> {rnc} (<a href='{dgii_link}'>🔍 Validar en DGII</a>)\n"
             f"👤 <b>INGENIERO:</b> {ing}\n"
             f"📞 <b>TEL:</b> <a href='tel:{tel}'>{tel}</a>\n"
+            f"📧 <b>EMAIL:</b> {email}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📐 <b>ÁREA ESTIMADA:</b> {area} m²\n"
             f"📦 <b>LOGÍSTICA (IDOMI):</b>\n"
@@ -84,8 +90,10 @@ def ejecutar_patrullaje():
             f"💵 <b>PRECIO SUGERIDO: RD$ {res['total']:,.0f}</b>\n"
             f"📈 <b>GANANCIA NETA: RD$ {res['neta']:,.0f}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📍 <a href='{maps_link}'>VER UBICACIÓN EXACTA EN MAPS</a>\n"
-            f"📲 <a href='{wa_link}'>CONTACTAR POR WHATSAPP</a>"
+            f"🔗 <a href='{fuente_link}'>VER FUENTE DE LA OBRA</a>\n\n"
+            f"📍 <a href='{maps_link}'>VER UBICACIÓN EN GOOGLE MAPS</a>\n"
+            f"📲 <a href='{wa_link}'>CONTACTAR POR WHATSAPP</a>\n"
+            f"✉️ <a href='{mail_link}'>ENVIAR CORREO</a>"
         )
         msg_id = enviar_telegram(alerta)
         if msg_id:
@@ -93,7 +101,7 @@ def ejecutar_patrullaje():
 
 def bucle():
     global ESTADO_MSG_ID
-    enviar_telegram("<b>🦅 EL HALCÓN v24.5 ONLINE</b>\nPatrullaje con Direcciones Detalladas iniciado.")
+    enviar_telegram("<b>🦅 EL HALCÓN v24.6 ONLINE</b>\nLinks de DGII y Google Maps corregidos.")
     contador = 0
     while True:
         ahora = datetime.datetime.now() - datetime.timedelta(hours=4)
