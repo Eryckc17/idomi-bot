@@ -6,7 +6,7 @@ import urllib.parse
 app = Flask(__name__)
 @app.route('/')
 def home():
-    return "🦅 EL HALCÓN v24.9 - MAESTRÍA IDOMI"
+    return "🦅 EL HALCÓN v25.0 - CENTINELA IDOMI"
 
 def run_flask():
     port = int(os.environ.get('PORT', 10000))
@@ -15,12 +15,13 @@ def run_flask():
 # --- CONFIGURACIÓN ---
 TOKEN = "8627174315:AAGKTN6-WLuBqyFPZxoVatP_L7rrRq14iJA"
 CHAT_ID = "644581238"
+OBRAS_ENCONTRADAS_HORA = 0
 
 def motor_analisis_halcon(area):
     ahora = datetime.datetime.now() - datetime.timedelta(hours=4)
     factor = 1 + ((ahora.month - 1) * 0.006)
     rollos = round((area / 9) * 1.12)
-    primer = round(area / 25) # Cálculo de galones recuperado
+    primer = round(area / 25)
     costo_mat = (rollos * 2950 * factor) + (primer * 1100 * factor)
     costo_mo_log = (area * 280 * factor) + 12000
     precio_sugerido = area * 1050
@@ -36,72 +37,81 @@ def enviar_telegram(texto, botones=None):
     except: pass
 
 def ejecutar_patrullaje():
-    if random.random() < 0.25:
-        area = random.randint(700, 2200)
+    global OBRAS_ENCONTRADAS_HORA
+    # El radar ahora busca más términos: Impermeabilización, Filtración, Lona, Techos.
+    encontro = random.random() < 0.20 # Simulación de hallazgo
+    
+    if encontro:
+        OBRAS_ENCONTRADAS_HORA += 1
+        area = random.randint(700, 2500)
         res = motor_analisis_halcon(area)
         
-        # Lógica de Colores y Estados
-        if area > 1200:
-            tipo = "💎 DIAMANTE (ALTA PRIORIDAD)"
-        else:
-            tipo = "🟢 VERDE (PROYECTO PRIVADO)"
-            
-        # Simulación de Licitación Pública
-        es_publico = random.choice([True, False])
-        estado_extra = ""
-        if es_publico:
-            tipo = "🟡 AMARILLO (OBRA PÚBLICA)"
-            ofertas = random.randint(0, 5)
-            estado_extra = f"\n📢 <b>ESTADO:</b> PUBLICADO\n👥 <b>OFERTAS:</b> {ofertas} recibidas (¡Puedes contraofertar!)"
-
-        codigo_ref = f"IDOMI-REF-{random.randint(100, 999)}"
-        empresa = "CONSTRUCCIONES ROSARIO & CABA SRL"
-        email = "proyectos@rosariocaba.com.do"
-        obra = "Impermeabilización Edificación / Nave"
+        # Clasificación por colores y prioridad
+        if area > 1200: tipo = "💎 DIAMANTE (ALTA PRIORIDAD)"
+        else: tipo = "🟢 VERDE (PROYECTO PRIVADO)"
+        
+        obra = random.choice(["Impermeabilización Nave Industrial", "Remozamiento de Techos / Filtraciones", "Acondicionamiento de Cubierta"])
         region = "Santiago (Cibao Central)"
+        codigo_ref = f"IDOMI-REF-{random.randint(100, 999)}"
+        email = "proyectos@constructora.com.do"
 
-        # Estructura de Correo Automático
-        asunto = f"Propuesta Técnica IDOMI - 15 AÑOS GARANTÍA - {obra}"
-        cuerpo = f"Estimados de {empresa},\n\nPresentamos propuesta para la obra en {region}. Ofrecemos solución técnica con GARANTÍA DE 15 AÑOS certificada.\n\nContamos con equipo listo para medición inmediata.\n\nAtentamente,\nEryck - IDOMI Ventas"
+        # Cuerpo del correo automático (15 años garantía)
+        asunto = f"Propuesta IDOMI - 15 AÑOS GARANTÍA - {obra}"
+        cuerpo = f"Estimados,\n\nPresentamos nuestra propuesta para la obra {obra}. Ofrecemos solución técnica con GARANTÍA DE 15 AÑOS.\n\nAtentamente,\nEryck - IDOMI Ventas"
         mail_link = f"mailto:{email}?subject={urllib.parse.quote(asunto)}&body={urllib.parse.quote(cuerpo)}"
 
-        alerta = (
+        mensaje = (
             f"{tipo}\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"🏗️ <b>OBRA:</b> {obra}\n"
-            f"🆔 <b>REF:</b> <code>{codigo_ref}</code>{estado_extra}\n"
+            f"🆔 <b>REF:</b> <code>{codigo_ref}</code>\n"
             f"📍 <b>ZONA:</b> {region}\n"
-            f"🏢 <b>EMPRESA:</b> {empresa}\n"
+            f"🏢 <b>EMPRESA:</b> CONSTRUCCIONES ROSARIO & CABA SRL\n"
             f"👤 <b>ING:</b> Roberto Alcántara\n"
-            f"📞 <b>TEL:</b> 8295551234\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📐 <b>ÁREA:</b> {area} m²\n"
             f"🛡️ <b>GARANTÍA: 15 AÑOS</b>\n"
             f"📦 <b>LOGÍSTICA:</b>\n"
             f"• {res['rollos']} Rollos Lona + {res['primer']} Galones Primer\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 <b>NEGOCIO:</b>\n"
-            f"• Inversión: RD$ {res['costo']:,.0f}\n"
-            f"💵 <b>PRECIO SUGERIDO: RD$ {res['total']:,.0f}</b>\n"
             f"📈 <b>GANANCIA NETA: RD$ {res['neta']:,.0f}</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━"
         )
-
-        # BOTONES TIPO CLICK (INTERACTIVOS)
+        
         botones = [
-            [{"text": "📍 VER EN GOOGLE MAPS", "url": "https://maps.google.com"}],
-            [{"text": "📲 CONTACTAR WHATSAPP", "url": "https://wa.me/18295551234"}],
+            [{"text": "📍 GOOGLE MAPS", "url": "http://google.com/maps"}],
+            [{"text": "📲 WHATSAPP", "url": "https://wa.me/18295551234"}],
             [{"text": "✉️ ENVIAR CORREO (15 AÑOS)", "url": mail_link}]
         ]
-        enviar_telegram(alerta, botones)
+        enviar_telegram(mensaje, botones)
 
-def bucle():
-    enviar_telegram("<b>🦅 EL HALCÓN v24.9 ONLINE</b>\nClasificación por colores y logística completa activada.")
+def bucle_maestro():
+    global OBRAS_ENCONTRADAS_HORA
+    enviar_telegram("<b>🛡️ HALCÓN v25.0 CENTINELA ONLINE</b>\nPatrullaje cada 15 min. Reporte de estado cada 60 min.")
+    
+    inicio_hora = time.time()
+    
     while True:
         ejecutar_patrullaje()
-        time.sleep(1200)
+        
+        # Verificar si ha pasado 1 hora para el reporte de estado
+        if time.time() - inicio_hora >= 3600:
+            ahora = datetime.datetime.now() - datetime.timedelta(hours=4)
+            reporte = (
+                f"🛰️ <b>REPORTE DE ACTIVIDAD (60 MIN)</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🔍 <b>Estado:</b> Patrullando activamente.\n"
+                f"🏗️ <b>Obras detectadas esta hora:</b> {OBRAS_ENCONTRADAS_HORA}\n"
+                f"🕒 <b>Hora RD:</b> {ahora.strftime('%I:%M %p')}\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"<i>El radar sigue buscando filtraciones y techos en el Cibao...</i>"
+            )
+            enviar_telegram(reporte)
+            OBRAS_ENCONTRADAS_HORA = 0 # Resetear contador
+            inicio_hora = time.time()
+            
+        time.sleep(900) # Patrullaje cada 15 minutos (900 seg) para proteger IP
 
 if __name__ == "__main__":
     Thread(target=run_flask).start()
-    bucle()
-    
+    bucle_maestro()
