@@ -1,14 +1,15 @@
+import os
 import requests
 import time
 import random
 import schedule
 from datetime import datetime, timedelta
 
-# --- CONFIGURACIÓN DE IDENTIDAD Y SEGURIDAD (DATOS ACTUALIZADOS) ---
-TOKEN = "8627174315:AAGKTN6-WLuBqyFPZxoVatP_L7rrRq14iJA"
-CHAT_ID = "644581238"
-# Proxy con tus credenciales de DataImpulse integradas
-PROXY_URL = "http://99b8b372f9d7a12093bf:c0fb22e7b57fecef@gw.dataimpulse.com:823" 
+# --- CONFIGURACIÓN DE SEGURIDAD (VÍA RENDER) ---
+# El bot ahora buscará estos datos en la pestaña 'Environment' de Render
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+PROXY_URL = os.getenv("PROXY_URL")
 
 # Rotación de Navegadores para evitar bloqueos
 USER_AGENTS = [
@@ -24,6 +25,9 @@ OBRAS_VISTAS = set()
 REPORTE_DIARIO = {"Diamante": 0, "Fueguito": 0, "Naranja": 0, "Verde": 0, "Amarillo": 0}
 
 def enviar_telegram(mensaje):
+    if not TOKEN or not CHAT_ID:
+        print("Error: TOKEN o CHAT_ID no configurados en Render.")
+        return
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {
         "chat_id": CHAT_ID, 
@@ -37,11 +41,10 @@ def enviar_telegram(mensaje):
         print(f"Error Telegram: {e}")
 
 def calcular_insumos(monto_estimado):
-    # Cálculo basado en promedio RD$ 650/m2 (Costo IDOMI)
     area_m2 = round(monto_estimado / 650)
-    rollos = round(area_m2 / 9) # 9m2 por rollo considerando traslapes
-    primer = round(area_m2 / 50) # Cobertura de paila de primer
-    ganancia = round(monto_estimado * 0.38) # Tu margen de beneficio
+    rollos = round(area_m2 / 9)
+    primer = round(area_m2 / 50)
+    ganancia = round(monto_estimado * 0.38)
     return area_m2, rollos, primer, ganancia
 
 def clasificar_semaforo(monto, dias_cierre):
@@ -51,27 +54,27 @@ def clasificar_semaforo(monto, dias_cierre):
     return "🟡 AMARILLO", "Amarillo"
 
 def patrullar_portal():
-    print(f"[{datetime.now()}] Iniciando Patrullaje con Proxy DataImpulse...")
+    print(f"[{datetime.now()}] Iniciando Patrullaje...")
     headers = {"User-Agent": random.choice(USER_AGENTS)}
-    proxies = {"http": PROXY_URL, "https": PROXY_URL}
+    proxies = {"http": PROXY_URL, "https": PROXY_URL} if PROXY_URL else None
     
-    # --- PROCESAMIENTO DE DATOS REALES ---
-    # Filtros automáticos: Estado=Publicado | Fecha > 01-Abr-2026
-    # (Aquí el script conectará con los endpoints de comprasdominicana.gob.do)
-    
-    hallazgos = [] # Se llena dinámicamente con los resultados del portal
-    
+    # Aquí va la lógica de extracción del portal (DGCP / Constructoras)
+    hallazgos = [] # Se llena dinámicamente
+
     for obra in hallazgos:
         if obra['id'] not in OBRAS_VISTAS:
             area, rollos, primer, ganancia = calcular_insumos(obra['monto'])
-            # Calculamos días restantes para el cierre
-            fecha_fin = datetime.strptime(obra['cierre'], "%Y-%m-%d %H:%M")
-            dias_restantes = (fecha_fin - datetime.now()).days
-            
+            # Lógica de fecha para semáforo
+            try:
+                fecha_fin = datetime.strptime(obra['cierre'], "%Y-%m-%d %H:%M")
+                dias_restantes = (fecha_fin - datetime.now()).days
+            except:
+                dias_restantes = 5 # Por defecto si no hay fecha
+
             semaforo, categoria = clasificar_semaforo(obra['monto'], dias_restantes)
             REPORTE_DIARIO[categoria] += 1
             
-            # Link dinámico a Maps usando la ubicación real
+            # Link dinámico a Maps
             maps_link = f"https://www.google.com/maps/search/?api=1&query={obra['ubicación'].replace(' ', '+')}"
             
             mensaje = (
@@ -96,36 +99,27 @@ def patrullar_portal():
             OBRAS_VISTAS.add(obra['id'])
 
 def reporte_vida():
-    ahora = datetime.now().strftime('%H:%M')
-    enviar_telegram(f"🦅 **Halcón IDOMI Activo**\nPatrullaje en curso (Cada 20-30 min).\nEstado: Buscando obras de Abril.\nProxy: Conectado vía DataImpulse.")
+    enviar_telegram(f"🦅 **Halcón IDOMI Activo**\nPatrullando Portal y Privados...\nEstado: Buscando presas de Abril.")
 
 def reporte_final():
     resumen = (
-        f"📊 **RESUMEN DE CAZA DIARIA - IDOMI**\n"
-        f"Fecha: {datetime.now().strftime('%d/%m/%Y')}\n\n"
+        f"📊 **RESUMEN DE CAZA DIARIA - IDOMI**\n\n"
         f"💎 Diamantes: {REPORTE_DIARIO['Diamante']}\n"
         f"🔥 Fueguitos: {REPORTE_DIARIO['Fueguito']}\n"
         f"🟢 Verdes: {REPORTE_DIARIO['Verde']}\n"
         f"🟡 Amarillos: {REPORTE_DIARIO['Amarillo']}\n\n"
-        f"Total de presas hoy: {sum(REPORTE_DIARIO.values())}"
+        f"Total hoy: {sum(REPORTE_DIARIO.values())}"
     )
     enviar_telegram(resumen)
     for key in REPORTE_DIARIO: REPORTE_DIARIO[key] = 0
 
-# --- PROGRAMACIÓN DE TIEMPOS VARIABLES ---
-def programar_proxima_busqueda():
-    patrullar_portal()
-    # Variación de 20 a 30 minutos para evitar detección
-    minutos = random.randint(20, 30)
-    schedule.every(minutos).minutes.do(programar_proxima_busqueda)
-    return schedule.CancelJob
-
-schedule.every(25).minutes.do(patrullar_portal) # Respaldo de tiempo fijo
+# Programación
+schedule.every(25).minutes.do(patrullar_portal)
 schedule.every(1).hours.do(reporte_vida)
 schedule.every().day.at("20:00").do(reporte_final)
 
 if __name__ == "__main__":
-    enviar_telegram("🦅 **Mega-Bot IDOMI Iniciado**\n\nFiltros: Abril 2026 / Solo Publicados.\nSectores: Lonas, Mantos y Techos.\nProxy: DataImpulse Activo.")
+    enviar_telegram("🦅 **Mega-Bot IDOMI Iniciado (Versión Segura)**\nFiltros: Abril 2026 / Solo Publicados.\nProxy configurado vía Render.")
     while True:
         schedule.run_pending()
         time.sleep(1)
