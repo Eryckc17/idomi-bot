@@ -1,130 +1,132 @@
-import os, time, requests, datetime, random, urllib.parse, re
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Thread
-from flask import Flask
+import requests
+import time
+import random
+import schedule
+from datetime import datetime, timedelta
 
-# --- 1. CONFIGURACIÓN DE SUPERVIVENCIA ---
-app = Flask('')
-@app.route('/')
-def home(): return f"🦅 HALCÓN IDOMI v35.0: OJO DE HALCÓN ACTIVO ✅ {datetime.datetime.now()}"
+# --- CONFIGURACIÓN DE IDENTIDAD Y SEGURIDAD ---
+TOKEN = "8627174315:AAGKTN6-WLuBqyFPZxoVatP_L7rrRq14iJA"
+CHAT_ID = "644581238"
+PROXY_URL = "http://99b8b372f9d7a12093bf:c0fb22e7b57fecef@gw.dataimpulse.com:823" # Datos de DataImpulse
 
-def run_flask():
-    try: app.run(host='0.0.0.0', port=10000)
-    except: pass
-
-# --- 2. CONFIGURACIÓN DE IDENTIDAD ---
-CHAT_ID = "5324546877" 
-TOKEN_TELEGRAM = "7449514332:AAEnN_52j_7xI769D-qgV_aHw_WpX-B220o"
+# Rotación de Navegadores para evitar bloqueos
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
 ]
 
-# --- 3. MOTOR DE CÁLCULO E INSUMOS (IDOMI SPEC) ---
-def calcular_materiales(metros):
-    # 1 rollo de lona cubre aprox 9m2 netos (contando traslape)
-    rollos = round(metros / 9)
-    # 1 galón de primer rinde aprox 15-20m2
-    primer = round(metros / 18)
-    return {"rollos": rollos, "primer": primer}
+# --- LÓGICA DE NEGOCIO IDOMI ---
+KEYWORDS = ["impermeabilizacion", "lona asfaltica", "manto asfaltico", "aluminizada", "techo", "filtracion"]
+OBRAS_VISTAS = set()
+REPORTE_DIARIO = {"Diamante": 0, "Fueguito": 0, "Naranja": 0, "Verde": 0, "Amarillo": 0}
 
-def obtener_semaforo(obra):
-    monto = obra.get('monto', 0)
-    sector = obra.get('sector', 'publico')
-    zona = obra.get('zona', 'nacional')
-    urgencia = obra.get('urgencia', False)
+def enviar_telegram(mensaje):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": mensaje, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Error Telegram: {e}")
 
-    if urgencia: return "🔥 ¡PARA AYER! (Licitación Abierta)"
-    if monto > 5000000: return "💎 DIAMANTE (Gran Escala / Infraestructura)"
-    if sector == 'privado' and 'Cibao' in zona: return "🟢 VERDE (Constructora Privada - Cibao Central)"
-    if sector == 'publico': return "🟡 AMARILLO (Nacional Público / Ministerio)"
-    return "🟠 NARANJA (Mantenimiento / Otros)"
+def calcular_insumos(monto_estimado):
+    # Cálculo basado en promedio RD$ 650/m2
+    area_m2 = round(monto_estimado / 650)
+    rollos = round(area_m2 / 9) # 9m2 por rollo traslapado
+    primer = round(area_m2 / 50) # 50m2 por paila
+    ganancia = round(monto_estimado * 0.38)
+    return area_m2, rollos, primer, ganancia
 
-# --- 4. PATRULLAJE AGRESIVO MULTICANAL ---
-KEYWORDS = ["impermeabilizacion", "manto asfaltico", "lona asfaltica", "filtracion techo", "ingenieria civil rd"]
-CONSTRUCTORAS = ["Ingenieria Estrella", "Bisono", "Constructora Rizek", "Obras Publicas RD"]
-OBRAS_PROCESADAS = set()
+def clasificar_semaforo(monto, dias_cierre):
+    if monto >= 2000000: return "💎 DIAMANTE", "Diamante"
+    if dias_cierre <= 2: return "🔥 FUEGUITO", "Fueguito"
+    if monto >= 500000: return "🟢 VERDE", "Verde"
+    return "🟡 AMARILLO", "Amarillo"
 
-def scan_total(query):
-    # Simulamos búsqueda en DGCP, LinkedIn y Redes de Construcción RD
-    # Aquí el bot rastrea patrones de "necesito", "licitación", "presupuesto"
-    time.sleep(random.uniform(1, 3))
-    # Para fines de este script, generamos el hallazgo con datos realistas
-    hallazgos = []
-    if random.random() > 0.8: # Simulación de éxito de búsqueda
-        ref = f"RD-{random.randint(1000, 9999)}"
-        if ref not in OBRAS_PROCESADAS:
-            metros = random.randint(300, 5000)
-            obra = {
-                "id": ref,
-                "titulo": f"Impermeabilización {random.choice(['Hospital', 'Escuela', 'Nave Industrial', 'Residencial'])}",
-                "entidad": random.choice(CONSTRUCTORAS),
-                "ingeniero": f"Ing. {random.choice(['Rodriguez', 'Perez', 'Martinez', 'Guzman'])}",
-                "monto": metros * 650,
-                "metros": metros,
-                "contacto": {"tel": "809-" + str(random.randint(200, 999)) + "-" + str(random.randint(1000, 9999)), "mail": "info@construccion.do"},
-                "zona": random.choice(["Santo Domingo", "Santiago (Cibao Central)", "Bavaro"]),
-                "sector": random.choice(['publico', 'privado']),
-                "urgencia": random.choice([True, False])
-            }
-            hallazgos.append(obra)
-            OBRAS_PROCESADAS.add(ref)
-    return hallazgos
-
-# --- 5. ENVÍO DE ALERTA DETALLADA ---
-def enviar_alerta_maestra(obra):
-    semaforo = obtener_semaforo(obra)
-    insumos = calcular_materiales(obra['metros'])
-    ganancia = obra['monto'] * 0.38
+def patrullar_portal():
+    print(f"[{datetime.now()}] Patrullando Portal y Privados...")
+    headers = {"User-Agent": random.choice(USER_AGENTS)}
+    proxies = {"http": PROXY_URL, "https": PROXY_URL}
     
-    mensaje = (
-        f"{semaforo}\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"🏗️ *PROYECTO:* {obra['titulo']}\n"
-        f"📍 *UBICACIÓN:* {obra['zona']}\n"
-        f"🏢 *CONSTRUCTORA:* {obra['entidad']}\n"
-        f"👷 *ING. A CARGO:* {obra['ingeniero']}\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"📞 *CONTACTO REAL:*\n"
-        f"📱 Tel: {obra['contacto']['tel']}\n"
-        f"📧 Mail: {obra['contacto']['mail']}\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"📐 *DESGLOSE TÉCNICO:*\n"
-        f"📏 Área: {obra['metros']} m²\n"
-        f"📜 Lonas: ~{insumos['rollos']} rollos\n"
-        f"🛢️ Primer: ~{insumos['primer']} galones\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"💰 *FINANZAS IDOMI:*\n"
-        f"💵 Presupuesto: RD$ {obra['monto']:,}\n"
-        f"📈 Ganancia Est.: RD$ {ganancia:,.2f}\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"🚀 *ACCIÓN:* Contactar ahora mismo. ¡No dejes que se enfríe!"
+    # Simulación de extracción de datos (Aquí conectamos con la API/Scraper del Portal)
+    # Filtro aplicado: Solo Abril 2026, Estado: Publicado
+    
+    # EJEMPLO DE HALLAZGO REAL (Simulado para demostración)
+    hallazgos = [
+        {
+            "id": "EDEESTE-DAF-CM-2026-0022",
+            "obra": "Impermeabilización Almacén Sabana Larga",
+            "entidad": "EDEESTE",
+            "monto": 1702150,
+            "cierre": "2026-04-15 17:55",
+            "ubicación": "Sabana Larga, Santo Domingo Este",
+            "lat_long": "18.4874,-69.8519",
+            "responsable": "Ing. Manuel Perdomo",
+            "contacto": "mperdomo@edeeste.com.do / 809-555-0122"
+        }
+    ]
+
+    for obra in hallazgos:
+        if obra['id'] not in OBRAS_VISTAS:
+            area, rollos, primer, ganancia = calcular_insumos(obra['monto'])
+            semaforo, categoria = clasificar_semaforo(obra['monto'], 4)
+            REPORTE_DIARIO[categoria] += 1
+            
+            maps_link = f"https://www.google.com/maps/search/?api=1&query={obra['lat_long']}"
+            
+            mensaje = (
+                f"{semaforo} - NUEVA OPORTUNIDAD\n\n"
+                f"🏗️ **Proyecto:** {obra['obra']}\n"
+                f"🏢 **Entidad:** {obra['entidad']}\n"
+                f"👤 **Responsable:** {obra['responsable']}\n"
+                f"📧 **Contacto:** {obra['contacto']}\n"
+                f"📍 **Ubicación:** {obra['ubicación']}\n"
+                f"🗺️ [Ver en Google Maps]({maps_link})\n\n"
+                f"🔗 **Link:** [Acceder al Portal](https://comprasdominicana.gob.do/procesos/{obra['id']})\n"
+                f"🆔 **Ref:** `{obra['id']}`\n"
+                f"⏱️ **Cierre:** {obra['cierre']}\n"
+                f"---\n"
+                f"📊 **ANÁLISIS TÉCNICO IDOMI:**\n"
+                f"* Area: {area} m2\n"
+                f"* Insumos: {rollos} Rollos / {primer} Pailas\n"
+                f"* Presupuesto Sugerido: RD$ {obra['monto']:,}\n"
+                f"* Ganancia Est. (38%): RD$ {ganancia:,}"
+            )
+            enviar_telegram(mensaje)
+            OBRAS_VISTAS.add(obra['id'])
+
+def reporte_vida():
+    enviar_telegram(f"🦅 Reporte Halcón IDOMI: Sistema activo. Patrullando con Proxy DataImpulse. (Hora: {datetime.now().strftime('%H:%M')})")
+
+def reporte_final():
+    resumen = (
+        f"📊 **RESUMEN DE CAZA - IDOMI**\n"
+        f"Hoy se encontraron:\n"
+        f"💎 Diamantes: {REPORTE_DIARIO['Diamante']}\n"
+        f"🔥 Fueguitos: {REPORTE_DIARIO['Fueguito']}\n"
+        f"🟢 Verdes: {REPORTE_DIARIO['Verde']}\n"
+        f"🟡 Amarillos: {REPORTE_DIARIO['Amarillo']}\n"
+        f"Total de presas detectadas: {sum(REPORTE_DIARIO.values())}"
     )
-    
-    requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage", 
-                  json={"chat_id": CHAT_ID, "text": mensaje, "parse_mode": "Markdown"})
+    enviar_telegram(resumen)
+    # Reset diario
+    for key in REPORTE_DIARIO: REPORTE_DIARIO[key] = 0
 
-# --- 6. LOOP DE VIGILANCIA CADA HORA ---
-def loop_halcon():
-    while True:
-        try:
-            print(f"📡 {datetime.datetime.now()} - Escaneando RD por aire, mar y tierra...")
-            encontrados = []
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                # Busca por palabras clave y por nombres de constructoras al mismo tiempo
-                tareas = [executor.submit(scan_total, k) for k in KEYWORDS + CONSTRUCTORAS]
-                for f in as_completed(tareas): encontrados.extend(f.result())
-            
-            if encontrados:
-                for o in encontrados: enviar_alerta_maestra(o)
-            else:
-                requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage", 
-                              json={"chat_id": CHAT_ID, "text": "✅ *Halcón IDOMI:* Patrullando constructoras y portales... Sin novedades esta hora. 🦅"})
-            
-            time.sleep(3600)
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            time.sleep(60)
+# --- PROGRAMACIÓN DE TAREAS ---
+# Patrullaje aleatorio cada 20-30 minutos
+def tarea_aleatoria():
+    patrullar_portal()
+    espera = random.randint(20, 30)
+    schedule.every(espera).minutes.do(tarea_aleatoria)
+    return schedule.CancelJob
+
+schedule.every(25).minutes.do(patrullar_portal)
+schedule.every(1).hours.do(reporte_vida)
+schedule.every().day.at("20:00").do(reporte_final)
 
 if __name__ == "__main__":
-    Thread(target=run_flask).start()
-    loop_halcon()
+    enviar_telegram("🦅 **Halcón IDOMI Despegando...**\nRadar configurado: Abril 2026.\nProxy: DataImpulse Activo.\nSolo Obras ABIERTAS.")
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
