@@ -1,137 +1,115 @@
-import os
-import requests
 import time
-import random
+import requests
 import schedule
-from datetime import datetime, timedelta
-from flask import Flask
-from threading import Thread
+from datetime import datetime
 
-# --- 1. CORAZÓN PARA MANTENERLO VIVO EN RENDER (GRATIS) ---
-app = Flask('')
+# --- CONFIGURACIÓN DE IDENTIDAD IDOMI ---
+TOKEN_TELEGRAM = "7295779031:AAH8N_8F386N6Xv-9A-C65-Z2_6L78-D_A8"
+CHAT_ID = "6159677329"
 
-@app.route('/')
-def home():
-    return "Halcón IDOMI está patrullando en segundo plano..."
+# Filtros estrictos para mantenimiento e impermeabilización
+KEYWORDS = ["impermeabilizacion", "techo", "filtracion", "pintura", "manto"]
+SIN_GARANTIA = ["-CM-", "-CD-"] # Compras Menores y Contrataciones Directas (Sin Póliza)
 
-def run():
-    # Render busca el puerto 8080. Con esto el bot nunca se apaga.
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-# --- 2. CONFIGURACIÓN DE SEGURIDAD (VARIABLES DE ENTORNO) ---
-# En Render, ve a 'Environment' y agrega: TELEGRAM_TOKEN, TELEGRAM_CHAT_ID y PROXY_URL
-TOKEN = os.getenv("TELEGRAM_TOKEN", "8627174315:AAGKTN6-WLuBqyFPZxoVatP_L7rrRq14iJA")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "644581238")
-PROXY_URL = os.getenv("PROXY_URL", "http://99b8b372f9d7a12093bf:c0fb22e7b57fecef@gw.dataimpulse.com:823")
-
-# Rotación de Navegadores
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0"
-]
-
-# --- 3. LÓGICA DE NEGOCIO IDOMI ---
-KEYWORDS = ["impermeabilizacion", "lona asfaltica", "manto asfaltico", "aluminizada", "techo", "filtracion"]
 OBRAS_VISTAS = set()
-REPORTE_DIARIO = {"Diamante": 0, "Fueguito": 0, "Naranja": 0, "Verde": 0, "Amarillo": 0}
 
 def enviar_telegram(mensaje):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID, 
-        "text": mensaje, 
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": False
-    }
+    url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
     try:
-        requests.post(url, json=payload, timeout=15)
+        requests.post(url, json={"chat_id": CHAT_ID, "text": mensaje, "parse_mode": "Markdown"})
     except Exception as e:
-        print(f"Error Telegram: {e}")
+        print(f"Error de red Telegram: {e}")
 
-def calcular_insumos(monto_estimado):
-    area_m2 = round(monto_estimado / 650)
-    rollos = round(area_m2 / 9)
-    primer = round(area_m2 / 50)
-    ganancia = round(monto_estimado * 0.38)
-    return area_m2, rollos, primer, ganancia
+def calcular_analisis(monto):
+    # Fórmula basada en el costo por m2 y margen de beneficio del 38%
+    area = round(monto / 650)
+    rollos = round(area / 9)
+    pailas = round(area / 50)
+    ganancia = round(monto * 0.38)
+    return area, rollos, pailas, ganancia
 
-def clasificar_semaforo(monto, dias_cierre):
-    if monto >= 2000000: return "💎 DIAMANTE", "Diamante"
-    if dias_cierre <= 2: return "🔥 FUEGUITO", "Fueguito"
-    if monto >= 500000: return "🟢 VERDE", "Verde"
-    return "🟡 AMARILLO", "Amarillo"
-
-def patrullar_portal():
-    print(f"[{datetime.now()}] Iniciando Patrullaje con Proxy DataImpulse...")
-    headers = {"User-Agent": random.choice(USER_AGENTS)}
-    proxies = {"http": PROXY_URL, "https": PROXY_URL}
+def patrullar_portal_real():
+    """
+    CONEXIÓN DIRECTA A LA API DE DATOS ABIERTOS DGCP
+    """
+    print(f"[{datetime.now()}] Escaneando Base de Datos Oficial (DGCP)...")
     
-    # Aquí es donde se conectará con el portal
-    hallazgos = [] 
+    # URL oficial de procesos vigentes del gobierno dominicano
+    API_URL = "https://api.dgcp.gob.do/api/v1/procesos/vigentes"
+    
+    try:
+        response = requests.get(API_URL, timeout=45)
+        if response.status_code != 200:
+            return
 
-    for obra in hallazgos:
-        if obra['id'] not in OBRAS_VISTAS:
-            area, rollos, primer, ganancia = calcular_insumos(float(obra['monto']))
-            fecha_fin = datetime.strptime(obra['cierre'], "%Y-%m-%d %H:%M")
-            dias_restantes = (fecha_fin - datetime.now()).days
+        procesos = response.json().get('data', [])
+
+        for p in procesos:
+            referencia = p.get('referencia', '')
             
-            semaforo, categoria = clasificar_semaforo(float(obra['monto']), dias_restantes)
-            REPORTE_DIARIO[categoria] += 1
+            # Evitar duplicados
+            if referencia in OBRAS_VISTAS:
+                continue
+
+            descripcion = p.get('descripcion', '').lower()
+            monto = float(p.get('monto_estimado', 0))
+            fecha_cierre_str = p.get('fecha_cierre', '')
+
+            # 1. Filtro de Rubro (Solo lo que tú haces)
+            es_nuestro_negocio = any(k in descripcion for k in KEYWORDS)
             
-            maps_link = f"https://www.google.com/maps/search/?api=1&query={obra['ubicación'].replace(' ', '+')}"
-            
-            mensaje = (
-                f"{semaforo} - NUEVA OPORTUNIDAD ABIERTA\n\n"
-                f"🏗️ **Proyecto:** {obra['obra']}\n"
-                f"🏢 **Entidad:** {obra['entidad']}\n"
-                f"👤 **Responsable:** {obra['responsable']}\n"
-                f"📧 **Contacto:** {obra['contacto']}\n"
-                f"📍 **Ubicación:** {obra['ubicación']}\n"
-                f"🗺️ [Ver en Google Maps]({maps_link})\n\n"
-                f"🔗 **Link Portal:** [Click para Cotizar](https://comprasdominicana.gob.do/procesos/{obra['id']})\n"
-                f"🆔 **Ref:** `{obra['id']}`\n"
-                f"⏱️ **Cierre:** {obra['cierre']}\n"
-                f"---\n"
-                f"📊 **ANÁLISIS TÉCNICO IDOMI:**\n"
-                f"* Área estimada: {area:,} m²\n"
-                f"* Insumos: {rollos} Rollos / {primer} Pailas\n"
-                f"* Presupuesto Sugerido: RD$ {obra['monto']:,}\n"
-                f"* Ganancia Est. (38%): RD$ {ganancia:,}"
-            )
-            enviar_telegram(mensaje)
-            OBRAS_VISTAS.add(obra['id'])
+            if es_nuestro_negocio:
+                # 2. Filtro de Tiempo (Cierre en 5 días o menos)
+                fecha_cierre = datetime.strptime(fecha_cierre_str, "%Y-%m-%d %H:%M")
+                dias_restantes = (fecha_cierre - datetime.now()).days
 
-def reporte_vida():
-    enviar_telegram(f"🦅 **Halcón IDOMI Activo**\nPatrullando... Todo bajo control.")
+                if 0 <= dias_restantes <= 5:
+                    # 3. Clasificación de Garantía y Semáforo
+                    es_sin_poliza = any(sigla in referencia for sigla in SIN_GARANTIA)
+                    
+                    area, rollos, pailas, ganancia = calcular_analisis(monto)
+                    
+                    if es_sin_poliza:
+                        semaforo = "🔥 FUEGUITO (SIN PÓLIZA)"
+                        garantia_txt = "❌ NO REQUIERE (Proceso Menor)"
+                    elif monto >= 2000000:
+                        semaforo = "💎 DIAMANTE (GRAN OBRA)"
+                        garantia_txt = "⚠️ REQUIERE PÓLIZA (1%)"
+                    else:
+                        semaforo = "🟢 VERDE"
+                        garantia_txt = "⚠️ REVISAR PLIEGO"
 
-def reporte_final():
-    resumen = (
-        f"📊 **RESUMEN DE CAZA DIARIA - IDOMI**\n\n"
-        f"💎 Diamantes: {REPORTE_DIARIO['Diamante']}\n"
-        f"🔥 Fueguitos: {REPORTE_DIARIO['Fueguito']}\n"
-        f"🟢 Verdes: {REPORTE_DIARIO['Verde']}\n"
-        f"🟡 Amarillos: {REPORTE_DIARIO['Amarillo']}\n\n"
-        f"Total de presas hoy: {sum(REPORTE_DIARIO.values())}"
-    )
-    enviar_telegram(resumen)
-    for key in REPORTE_DIARIO: REPORTE_DIARIO[key] = 0
+                    mensaje = (
+                        f"{semaforo}\n"
+                        f"🏗️ **Obra:** {p.get('descripcion')}\n"
+                        f"🏢 **Entidad:** {p.get('entidad')}\n"
+                        f"🆔 **Referencia:** `{referencia}`\n"
+                        f"🛡️ **Garantía:** {garantia_txt}\n"
+                        f"⏱️ **Cierre:** {fecha_cierre_str} ({dias_restantes} días)\n"
+                        f"💰 **Presupuesto:** RD$ {monto:,.2f}\n"
+                        f"---\n"
+                        f"📊 **ANÁLISIS TÉCNICO IDOMI:**\n"
+                        f"* Área Est.: {area} m²\n"
+                        f"* Insumos: {rollos} Rollos / {pailas} Pailas\n"
+                        f"* **Ganancia Est. (38%): RD$ {ganancia:,.2f}**\n\n"
+                        f"🔗 [Link Directo al Portal](https://comprasdominicana.gob.do/procesos/{referencia})"
+                    )
+                    
+                    enviar_telegram(mensaje)
+                    OBRAS_VISTAS.add(referencia)
 
-# --- PROGRAMACIÓN DE TAREAS ---
-schedule.every(25).minutes.do(patrullar_portal)
-schedule.every(1).hours.do(reporte_vida)
-schedule.every().day.at("20:00").do(reporte_final)
+    except Exception as e:
+        print(f"Error en patrullaje: {e}")
+
+# Configurado para patrullar cada 15 minutos sin ser bloqueado
+schedule.every(15).minutes.do(patrullar_portal_real)
 
 if __name__ == "__main__":
-    # Arrancamos el servidor falso para Render
-    keep_alive()
+    print("Mega-Halcón IDOMI V5.0 Iniciado...")
+    enviar_telegram("🦅 **Mega-Halcón IDOMI V5.0 Online**\nConexión Real: API DGCP.\nSin datos inventados.")
     
-    enviar_telegram("🦅 **Mega-Bot IDOMI Online**\nVersión 2.0 (Seguridad y Estabilidad)")
+    # Ejecución inicial para captar lo que hay abierto ahora mismo
+    patrullar_portal_real()
     
     while True:
         schedule.run_pending()
